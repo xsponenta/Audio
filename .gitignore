@@ -1,0 +1,14 @@
+# Cached PyTorch features (large binary files)
+cache/
+
+# Results (can be regenerated)
+#results/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
