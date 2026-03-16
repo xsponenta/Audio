@@ -1,0 +1,2 @@
+sample_id,audio_path,reference_phonemes,prediction,per
+TRAIN/DR2/MRLR0/SA2,TIMIT_enhanced/base/TRAIN/DR2/MRLR0/SA2.WAV,h# d ow n ae s epi m iy dx ix kcl k eh r iy ih n q oy l iy r ae gcl g l ay kcl dh ae tcl t h#,don't ask me to carry an oily rag like that,1.0

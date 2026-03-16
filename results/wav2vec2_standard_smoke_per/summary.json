@@ -1,0 +1,20 @@
+[
+  {
+    "variant": "base_timit",
+    "root": "timit/data",
+    "processed": 1,
+    "missing_audio": 0,
+    "failed": 0,
+    "avg_per": 1.0,
+    "predictions_csv": "results/wav2vec2_standard_smoke_per/base_timit_predictions.csv"
+  },
+  {
+    "variant": "base",
+    "root": "TIMIT_enhanced/base",
+    "processed": 1,
+    "missing_audio": 0,
+    "failed": 0,
+    "avg_per": 1.0,
+    "predictions_csv": "results/wav2vec2_standard_smoke_per/base_predictions.csv"
+  }
+]
