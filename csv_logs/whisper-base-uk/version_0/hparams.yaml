@@ -1,0 +1,5 @@
+freeze_encoder: true
+hf_token: REDACTED
+lr: 1.0e-05
+max_new_tokens: 225
+model_name: openai/whisper-base

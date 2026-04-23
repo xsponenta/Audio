@@ -1,0 +1,17 @@
+# Large model artifacts (exceed GitHub 100MB limit)
+*.ckpt
+*.safetensors
+*.bin
+*.pt
+*.pth
+
+# Datasets & caches
+dataset/
+hf_cache/
+local_archives/
+.venv/
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
