@@ -9,7 +9,7 @@
 dataset/
 hf_cache/
 local_archives/
-ua_ast_data/audio/
+ast_level2_librispeech/ua_ast_data/audio/
 .venv/
 __pycache__/
 *.pyc
