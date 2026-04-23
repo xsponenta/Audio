@@ -1,0 +1,9 @@
+{
+  "test_manifest": "ua_ast_data/manifests/combined_uk/test.clean.jsonl",
+  "max_test_samples": 100,
+  "baseline_model": "openai/whisper-base",
+  "baseline_comet": 0.30741546511650086,
+  "finetuned_model": "models/whisper-base-ua-ast",
+  "finetuned_comet": 0.36944365471601487,
+  "delta_comet": 0.062028189599514005
+}

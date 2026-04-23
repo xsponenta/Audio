@@ -1,0 +1,22 @@
+{
+  "run_mode": "final_full",
+  "base_model": "openai/whisper-base",
+  "finetuned_model": "models/whisper-base-ua-ast",
+  "max_train_samples": null,
+  "max_test_samples": null,
+  "num_epochs": 3,
+  "splits": {
+    "test.clean": {
+      "records": 2620,
+      "baseline_comet": 0.3209238578714715,
+      "finetuned_comet": 0.41744581426827965,
+      "delta_comet": 0.09652195639680816
+    },
+    "test.other": {
+      "records": 2939,
+      "baseline_comet": 0.3265953166115625,
+      "finetuned_comet": 0.4138608982811253,
+      "delta_comet": 0.08726558166956283
+    }
+  }
+}
