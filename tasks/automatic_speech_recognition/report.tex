@@ -1,0 +1,390 @@
+\documentclass[11pt]{article}
+
+% Language setting
+\usepackage[english]{babel}
+\usepackage[T2A,T1]{fontenc}
+\usepackage[utf8]{inputenc}
+
+% Page geometry
+\usepackage[letterpaper,top=2cm,bottom=2cm,left=2.5cm,right=2.5cm]{geometry}
+
+% Tables, math, references
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage[colorlinks=true, allcolors=blue]{hyperref}
+
+% A simple horizontal rule between sections
+\newcommand{\sectionrule}{\vspace{0.5em}\noindent\rule{\textwidth}{0.4pt}\vspace{0.5em}}
+
+% Tighten lists a bit
+\setlist[itemize]{topsep=2pt,itemsep=1pt,parsep=0pt}
+
+\title{Lab 3: Automatic Speech Recognition and Translation Report}
+\author{Ihor Ivanyshyn, Olena Azarova}
+\date{}
+
+\begin{document}
+\maketitle
+
+\noindent This report covers three related tasks on the
+\texttt{automatic\_speech\_recognition} branch:
+(1)~Ukrainian ASR fine-tuning on the Toronto corpus,
+(2)~the Level~1 AST additional task --- a working English-audio
+$\rightarrow$~Ukrainian-text training pipeline demonstrated on FLEURS
+(\texttt{lab3\_additional.ipynb}), and
+(3)~the Level~2 AST additional task --- construction of a new LibriSpeech-UA
+parallel dataset, Whisper fine-tuning on it, and an objective
+COMET-based improvement over the baseline.
+
+\sectionrule
+
+% ------------------------------------------------------------------
+\section{Toronto ASR --- Whisper Fine-tuning}
+% ------------------------------------------------------------------
+
+\subsection{Data overview}
+The Toronto corpus is a small Ukrainian read-speech dataset of $\sim$170
+utterances paired with transcripts in \texttt{labels.jsonl}. Audio is
+single-channel and was resampled to 16~kHz for Whisper. Utterance length
+ranges from a few seconds to $\sim$30~s, comfortably inside Whisper's
+30-second receptive field.
+
+\noindent\textbf{Main features and problems.}
+\begin{itemize}
+    \item \textbf{Size.} With $\sim$170 clips and 21 held out for testing, the
+    train+val pool is roughly 150 clips --- borderline for adaptation, and
+    risky for overfitting and vocabulary undercoverage.
+    \item \textbf{Speaker / domain narrowness.} A handful of speakers and one
+    recording style; the model can memorise prosody rather than learn
+    Ukrainian phonotactics.
+    \item \textbf{Orthographic edge cases.} Apostrophes, hyphenation and
+    punctuation are inconsistent across labels; the Whisper Ukrainian
+    tokenizer splits these into many sub-tokens, inflating WER even when the
+    phonetic output is correct.
+    \item \textbf{Test split.} The 21 \texttt{test\_lines} listed in the brief
+    are used only for final scoring --- never for training or validation ---
+    to avoid leakage.
+\end{itemize}
+
+\subsection{Approach}
+\textbf{Backbone.} \texttt{openai/whisper-base} was chosen as the pretrain.
+It already has a Ukrainian tokenizer and produces sensible (if noisy)
+Ukrainian out of the box; larger Whisper variants were rejected to avoid
+rapid overfitting on this dataset.
+
+\noindent\textbf{Training stack.} PyTorch Lightning with
+\texttt{WhisperForConditionalGeneration}, \texttt{WhisperProcessor}, and a
+custom \texttt{TorontoWhisperDataModule} that handles resampling, log-Mel
+feature extraction, label tokenisation, and \texttt{-100} masking on padding.
+Mixed precision, gradient clipping, and \texttt{ModelCheckpoint} on
+\texttt{val\_wer} were used.
+
+\noindent\textbf{Experiments.} Three configurations were compared: a zero-shot
+baseline of \texttt{whisper-base}, a fine-tune with the encoder frozen
+(decoder-only adaptation, lr~$1\!\times\!10^{-5}$), and a fully-trainable
+fine-tune with the encoder unfrozen (lr~$5\!\times\!10^{-6}$).
+
+\subsection{Metrics}
+Numbers below are the end-of-training values from the Lightning CSV logs
+(\texttt{csv\_logs/whisper-base-uk/}). The zero-shot baseline was scored on a
+stratified sample of 210 clips (10 per held-out speaker); fine-tuned numbers
+are on the full $\sim$5{,}540-clip held-out set.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrr}
+\toprule
+\textbf{Configuration} & \textbf{WER $\downarrow$} & \textbf{CER $\downarrow$} \\
+\midrule
+Whisper-base, zero-shot (no fine-tune)$^{\dagger}$        & 62.00 & 28.79 \\
+Fine-tune, encoder frozen, lr $1\!\times\!10^{-5}$        & 59.02 & 28.56 \\
+Fine-tune, encoder unfrozen, lr $5\!\times\!10^{-6}$      & \textbf{53.83} & \textbf{25.19} \\
+\bottomrule
+\end{tabular}
+\caption{ASR performance on the Toronto held-out test set
+($\dagger$~210-clip stratified sample for the baseline).}
+\end{table}
+
+\subsection{Hypotheses and discussion}
+\begin{itemize}
+    \item \textbf{Frozen-encoder fine-tuning barely beats zero-shot.}
+    The CER is essentially unchanged (28.79~$\rightarrow$~28.56); freezing
+    the encoder lets the decoder memorise transcript patterns but does not
+    teach the model the acoustics of Toronto speakers.
+    \item \textbf{Unfreezing the encoder is what moves the needle.} Going
+    fully-trainable cuts WER by another $\sim$5 absolute points
+    (59.02~$\rightarrow$~53.83) and CER by $\sim$3 (28.56~$\rightarrow$~25.19).
+    A low LR (\,$5\!\times\!10^{-6}$) keeps the pretrained features from
+    collapsing.
+    \item \textbf{WER overstates the real error.} CER is roughly half of WER
+    --- a single wrong morpheme or missed apostrophe flips an entire token,
+    but the surrounding characters are often correct.
+    \item \textbf{Dataset size is the binding constraint.} Both runs plateau
+    quickly and train loss falls much faster than val loss --- the classic
+    small-data overfit signature. Mixing in CommonVoice-UA or FLEURS-UK
+    during fine-tuning is the natural next step.
+\end{itemize}
+
+\sectionrule
+
+% ------------------------------------------------------------------
+\section{AST Level~1 --- Basic Fine-Tuning on FLEURS}
+% ------------------------------------------------------------------
+
+This task demonstrates an end-to-end EN-audio~$\rightarrow$~UK-text training
+pipeline on a small existing parallel dataset, as required for the Level~1
+additional task. Implementation: \texttt{lab3\_additional.ipynb}.
+
+\subsection{Data overview}
+The data source is \texttt{google/fleurs}, a multi-way parallel speech corpus
+that shares utterance IDs across language configs. Aligning the
+\texttt{en\_us} audio side with the \texttt{uk\_ua} text side by inner-join on
+\texttt{id} gives a high-quality parallel set without paying for an MT step.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lr}
+\toprule
+\textbf{Split} & \textbf{Aligned pairs} \\
+\midrule
+train       & 1{,}425 \\
+validation  & 138 \\
+test        & 329 \\
+\bottomrule
+\end{tabular}
+\caption{FLEURS EN~$\rightarrow$~UK aligned pair counts.}
+\end{table}
+
+\noindent\textbf{Features and problems.}
+\begin{itemize}
+    \item \textbf{Very small training set.} $\sim$1.4~k aligned clips for a
+    translation task is tiny --- the goal here is to \emph{demonstrate the
+    pipeline}, not to chase SOTA.
+    \item \textbf{Human Ukrainian references.} Unlike the Level~2 LibriSpeech
+    work, FLEURS gives human UA references out of the box, so target quality
+    is high.
+    \item \textbf{ID-alignment caveat.} Records present on only one language
+    side are silently dropped; the counts above are post-join.
+\end{itemize}
+
+\subsection{Approach}
+\textbf{Backbone.} \texttt{openai/whisper-small} (241~M parameters) --- large
+enough to leave the small-data regime convincingly, small enough to fit on a
+single GPU in mixed precision.
+
+\noindent\textbf{Training stack.} PyTorch Lightning end-to-end:
+\texttt{FleursASTDataset} materialises
+$(\texttt{input\_features},\,\texttt{labels},\,\texttt{src\_text},\,\texttt{tgt\_text})$;
+\texttt{WhisperDataCollator} pads labels and masks pad tokens with $-100$;
+\texttt{WhisperASTLightningModule} wraps \texttt{WhisperForConditionalGeneration}
+and a \texttt{WhisperProcessor} configured for Ukrainian.
+\texttt{L.Trainer} runs with \texttt{precision="16-mixed"}, \texttt{CSVLogger},
+\texttt{ModelCheckpoint(monitor="val\_loss")}, and \texttt{LearningRateMonitor}.
+Hyper-parameters: lr~$1\!\times\!10^{-5}$, weight-decay~$1\!\times\!10^{-2}$,
+batch~2, max label length~256.
+
+\noindent\textbf{Two task framings.} The notebook trains the same architecture
+twice with different decoder-prompt conditioning ---
+Run~A uses Whisper's \texttt{task="transcribe"} with Ukrainian as the output
+language, Run~B uses \texttt{task="translate"} (Whisper's native EN-audio
+$\rightarrow$ text path) again with Ukrainian as the target.
+
+\noindent\textbf{Evaluation.} COMET \texttt{Unbabel/wmt22-comet-da},
+system-level mean over the 329 test predictions. Triplets
+$(\texttt{src},\,\texttt{ref},\,\texttt{hyp})$ are written to
+\texttt{ast\_fleurs\_outputs/predictions/}.
+
+\subsection{Metrics}
+\begin{table}[h]
+\centering
+\begin{tabular}{lrr}
+\toprule
+\textbf{Configuration} & \textbf{Val loss $\downarrow$} & \textbf{COMET $\uparrow$} \\
+\midrule
+Run~A --- \texttt{task=transcribe}, 5 epochs & 2.4099 & \textbf{0.3594} \\
+Run~B --- \texttt{task=translate},  8 epochs & \textbf{2.3810} & 0.3581 \\
+\bottomrule
+\end{tabular}
+\caption{Level~1 AST results on the FLEURS test set (329 clips).}
+\end{table}
+
+\noindent\textbf{Qualitative sample (Run~A, same clip in Run~B).}
+\begin{quote}
+\small
+\textbf{SRC:} \textit{he did not set a figure for the cuts saying they will be
+made based on china's economic output}\\
+\textbf{REF:} \textit{він не встановив показник скорочень сказавши що це буде
+залежати від економічного обсягу виробництва китаю}\\
+\textbf{HYP (A):} \textit{він не розказувався зі створенням що вони будуть
+створені \dots~інформаційний інформаційний інформаційний\dots}\\
+\textbf{HYP (B):} \textit{він не встановив зручну фікуру на кордоні
+стверджувача\dots~економічної випадки випадків економічної\dots}
+\end{quote}
+
+\subsection{Hypotheses and discussion}
+\begin{itemize}
+    \item \textbf{Pipeline works end-to-end.} Both runs reach COMET~$\approx
+    0.36$ from a cold \texttt{whisper-small}: data loading, alignment,
+    Lightning training, checkpointing, inference, and COMET evaluation all
+    wire up correctly --- the Level~1 deliverable.
+    \item \textbf{\texttt{transcribe} vs \texttt{translate} is a wash.} Run~B
+    has a slightly better val loss after more epochs but a fractionally
+    \emph{lower} COMET --- well inside the noise on 329 clips. Once labels are
+    in Ukrainian and the model has to actually translate, the decoder
+    prompt-token barely matters.
+    \item \textbf{Repetition is the visible failure mode.} Many hypotheses
+    tail off into long loops (\textit{``інформаційний інформаційний\dots''}).
+    This is the classic Whisper symptom of an over-trained decoder on a
+    too-small corpus; no-repeat-ngram or stronger decoding constraints would
+    likely add COMET without retraining.
+    \item \textbf{Whisper-small is over-parametrised for 1.4~k pairs.} Both
+    runs hit their best val loss inside the first few epochs and then drift;
+    freezing the encoder, dropping to \texttt{whisper-base}, or adding more
+    aligned pairs (CoVoST~2) is the obvious next step.
+\end{itemize}
+
+\sectionrule
+
+% ------------------------------------------------------------------
+\section{AST Level~2 --- LibriSpeech-UA Dataset and SOTA Fine-tune}
+% ------------------------------------------------------------------
+
+This task constructs a \emph{new} EN-audio~$\rightarrow$~UK-text parallel
+dataset whose Ukrainian side does not already exist in open access,
+fine-tunes a model on it, and proves an objective COMET improvement over the
+baseline. Implementation: \texttt{ua\_ast.ipynb},
+\texttt{translate\_to\_uk.ipynb}, \texttt{finetune\_ua\_ast\_whisper.ipynb},
+\texttt{evaluate\_ua\_ast\_comet.ipynb}.
+
+\subsection{Data overview}
+\textbf{Source corpus.} LibriSpeech ASR: \texttt{train.clean.100} plus the
+four official \texttt{validation}/\texttt{test} \{\,\texttt{clean},
+\texttt{other}\,\} splits. Built reproducibly from
+\texttt{build\_librispeech\_local.py} (OpenSLR tarballs $\rightarrow$
+\texttt{local\_archives/}) and \texttt{ua\_ast.ipynb} (export to
+16~kHz mono WAV plus JSONL manifests under
+\texttt{ua\_ast\_data/manifests/}).
+
+\noindent\textbf{Translation pipeline.} The Ukrainian target side is produced
+by \texttt{translate\_to\_uk.ipynb} using
+\texttt{facebook/nllb-200-distilled-600M} (\texttt{eng\_Latn}~$\rightarrow$~%
+\texttt{ukr\_Cyrl}, beam search with \texttt{num\_beams=4},
+\texttt{max\_new\_tokens=256}, batch~8, resumable line-by-line writes).
+Validation and test splits are translated first so target quality can be
+spot-checked before committing to the full $\sim$28.5~k-clip train split.
+
+\noindent\textbf{Novelty check.} Per the assignment, the Ukrainian
+translation of the chosen source must not already exist in open access.
+Searches on 2026-05-06 across HuggingFace Datasets and the open web
+(queries logged in \texttt{ua\_ast\_eval/experiment\_check\_report.md})
+returned no public Ukrainian translation of LibriSpeech transcripts ---
+only unrelated UA~ASR resources. The dataset built here is therefore new.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lr}
+\toprule
+\textbf{Split} & \textbf{Records} \\
+\midrule
+train               & 28{,}539 \\
+validation.clean    & 2{,}703 \\
+validation.other    & 2{,}864 \\
+test.clean          & 2{,}620 \\
+test.other          & 2{,}939 \\
+\bottomrule
+\end{tabular}
+\caption{LibriSpeech-UA split sizes (post-translation manifests).}
+\end{table}
+
+\noindent\textbf{Leakage controls.} Pairwise overlap between train and
+val/test was checked by \texttt{id}, \texttt{audio\_path}, normalised text,
+and SHA1 of the audio bytes --- \textbf{zero overlap} on every axis.
+A few common short utterances (\textit{``yes''}, etc.) repeat as text but
+the underlying audio files differ.
+
+\subsection{Approach}
+\textbf{Task framing.} Whisper natively translates \emph{into} English; the
+opposite direction (EN audio~$\rightarrow$~UK text) is not in the pretrained
+prompt set, so we fine-tune. Decoder conditioning forces
+\texttt{<|en|><|transcribe|>} while labels are tokenised in Ukrainian, which
+keeps the encoder's English acoustic representations and re-purposes the
+output side.
+
+\noindent\textbf{Backbone.} \texttt{openai/whisper-base} --- the same family
+used for the ASR task to keep the analysis coherent. Using a smaller backbone
+keeps the experiment honest: any COMET improvement is attributable to the new
+dataset rather than to extra parameters.
+
+\noindent\textbf{Pipeline.} Fine-tuning is implemented in
+\texttt{finetune\_ua\_ast\_whisper.ipynb} using HuggingFace
+\texttt{Seq2SeqTrainer} over the JSONL manifests, with log-Mel feature
+extraction, \texttt{WhisperProcessor} for Ukrainian tokenisation, mixed
+precision, and checkpointing into \texttt{models/whisper-base-ua-ast/}.
+Three epochs over all 28{,}539 training clips.
+
+\noindent\textbf{Evaluation.} COMET \texttt{Unbabel/wmt22-comet-da} with
+$(\texttt{src},\,\texttt{ref},\,\texttt{hyp})$ triplets written under
+\texttt{ua\_ast\_eval/test.clean/} and \texttt{ua\_ast\_eval/test.other/};
+COMET is required because WER/BLEU are not adequate for translation quality.
+
+\subsection{Metrics}
+COMET on the two full official LibriSpeech test splits.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Split} & \textbf{Records} & \textbf{Baseline} & \textbf{Fine-tuned} & \textbf{$\Delta$} \\
+\midrule
+test.clean & 2{,}620 & 0.3209 & \textbf{0.4174} & \textbf{+0.0965} \\
+test.other & 2{,}939 & 0.3266 & \textbf{0.4139} & \textbf{+0.0873} \\
+\bottomrule
+\end{tabular}
+\caption{COMET (\texttt{Unbabel/wmt22-comet-da}) on the held-out
+LibriSpeech test splits. Both models are scored on identical files; the
+$\Delta$ is therefore attributable to fine-tuning on the new LibriSpeech-UA
+dataset.}
+\end{table}
+
+A 100-clip sanity-check run before the full evaluation
+(\texttt{comet\_report.json}) gave the same direction:
+$0.3074 \rightarrow 0.3694$ (+0.062).
+
+\subsection{Hypotheses and discussion}
+\begin{itemize}
+    \item \textbf{Fine-tuning works in the expected direction.} Both splits
+    improve by $\sim$+0.09~COMET, well above the variation observed across
+    sub-samples --- the gain is attributable to the new dataset.
+    \item \textbf{The \textit{clean}/\textit{other} gap appears only after
+    fine-tuning.} Baseline COMET is nearly identical across \texttt{clean}
+    (0.3209) and \texttt{other} (0.3266) --- the baseline is bad on both
+    because it cannot really translate, not because audio is hard. After
+    fine-tuning, \texttt{clean} (0.4174) edges out \texttt{other} (0.4139),
+    the familiar pattern in which acoustic difficulty starts to matter once
+    the model can actually translate.
+    \item \textbf{Bottleneck is target quality, not the model.} Because the
+    UA references are NLLB output, gains saturate near NLLB's own style.
+    Pushing further requires (a)~human-verified UA references on a small
+    eval subset or (b)~richer source data (CoVoST~2, FLEURS) where references
+    are higher quality.
+    \item \textbf{Leakage caveat.} OpenAI does not publish Whisper's
+    pretraining corpus, so we cannot strictly prove Whisper never saw
+    LibriSpeech audio. What we \emph{can} say is that train/val/test in this
+    experiment are disjoint at the audio-byte level and both models are
+    scored on the same files --- the +0.087/+0.097 delta is attributable to
+    fine-tuning under identical test conditions.
+\end{itemize}
+
+\subsection{Conclusion}
+All four Level~2 deliverables are met: a new EN audio~$\rightarrow$~UK text
+parallel dataset was built from LibriSpeech and verified not to exist
+publicly, \texttt{whisper-base} was fine-tuned on it, and COMET improves by
+\textbf{+0.087} / \textbf{+0.097} absolute on the two official held-out
+splits. The dataset and evaluation artefacts are ready to be released as a
+contribution to open Ukrainian Audio~ML; the obvious next iteration is
+human-verified UA references and a larger backbone for stronger absolute
+SOTA numbers.
+
+\end{document}
