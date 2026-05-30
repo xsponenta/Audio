@@ -1,0 +1,2 @@
+sample_id,audio_path,reference,prediction,wer
+TRAIN/DR2/MRLR0/SA2,timit/data/TRAIN/DR2/MRLR0/SA2.WAV,don't ask me to carry an oily rag like that,don't ask me to carry an oily rag like that,0.0

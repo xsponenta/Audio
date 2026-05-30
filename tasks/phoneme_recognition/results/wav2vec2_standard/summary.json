@@ -1,0 +1,47 @@
+[
+  {
+    "variant": "base_timit",
+    "root": "timit/data",
+    "processed": 336,
+    "missing_audio": 0,
+    "failed": 0,
+    "avg_per": 0.9999542113095237,
+    "predictions_csv": "results/wav2vec2_standard/base_timit_predictions.csv"
+  },
+  {
+    "variant": "bandpass",
+    "root": "TIMIT_enhanced/bandpass",
+    "processed": 336,
+    "missing_audio": 0,
+    "failed": 0,
+    "avg_per": 0.9999069940476191,
+    "predictions_csv": "results/wav2vec2_standard/bandpass_predictions.csv"
+  },
+  {
+    "variant": "bandpass_wiener",
+    "root": "TIMIT_enhanced/bandpass_wiener",
+    "processed": 336,
+    "missing_audio": 0,
+    "failed": 0,
+    "avg_per": 0.999898056547619,
+    "predictions_csv": "results/wav2vec2_standard/bandpass_wiener_predictions.csv"
+  },
+  {
+    "variant": "base",
+    "root": "TIMIT_enhanced/base",
+    "processed": 336,
+    "missing_audio": 0,
+    "failed": 0,
+    "avg_per": 0.9999542113095237,
+    "predictions_csv": "results/wav2vec2_standard/base_predictions.csv"
+  },
+  {
+    "variant": "full",
+    "root": "TIMIT_enhanced/full",
+    "processed": 336,
+    "missing_audio": 0,
+    "failed": 0,
+    "avg_per": 1.0,
+    "predictions_csv": "results/wav2vec2_standard/full_predictions.csv"
+  }
+]
