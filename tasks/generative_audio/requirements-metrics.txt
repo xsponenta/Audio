@@ -1,0 +1,6 @@
+jiwer
+huggingface_hub
+torch
+torchaudio
+transformers
+soundfile

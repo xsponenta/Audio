@@ -1,0 +1,7 @@
+text,strategy,generated_audio,reference_audio,CER,UTMOS,SECS,asr_hypothesis
+"It’s simple, evocative, and arguably the most peaceful way to demonstrate that you don't need many words to tell a full story.",Greedy,generated_samples/00_greedy.wav,./data/LJSpeech-1.1/wavs/LJ003-0083.wav,0.719008,2.815547,0.436770,"In most volumes, Dan Dulles tells us bossed o..."
+"It’s simple, evocative, and arguably the most peaceful way to demonstrate that you don't need many words to tell a full story.",Balanced,generated_samples/00_balanced.wav,./data/LJSpeech-1.1/wavs/LJ003-0083.wav,0.768595,3.738323,0.186324,"Hot dogs, Boston malls, balsams, a denturee c..."
+"It’s simple, evocative, and arguably the most peaceful way to demonstrate that you don't need many words to tell a full story.",High-randomness,generated_samples/00_high_randomness.wav,./data/LJSpeech-1.1/wavs/LJ003-0083.wav,0.760331,4.213087,0.429147,"and in turn, all castled, or primed, when the..."
+The cat slept.,Greedy,generated_samples/01_greedy.wav,./data/LJSpeech-1.1/wavs/LJ003-0083.wav,0.692308,2.689886,0.039844,Eat tadpoles.
+The cat slept.,Balanced,generated_samples/01_balanced.wav,./data/LJSpeech-1.1/wavs/LJ003-0083.wav,0.923077,3.728642,0.037254,He didn't tell any.
+The cat slept.,High-randomness,generated_samples/01_high_randomness.wav,./data/LJSpeech-1.1/wavs/LJ003-0083.wav,1.000000,3.943577,0.023044,playing Zooland.
